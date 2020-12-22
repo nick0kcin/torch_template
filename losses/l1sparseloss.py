@@ -1,7 +1,5 @@
 from torch.nn import Module
-from torch.nn.functional import l1_loss, max_pool2d
-import torch
-from torch.nn.functional import  normalize
+from torch.nn.functional import l1_loss
 
 
 def identity(x):

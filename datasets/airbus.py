@@ -1,17 +1,20 @@
+import itertools
+from collections import namedtuple
+
+import cv2
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
-import cv2
-import itertools
-from collections import namedtuple
+
 from image_utils import rle_decode, draw_gaussian
 
+
 # np.seterr(divide='raise', invalid='raise')
+
 
 class AirBusDataset(Dataset):
 
     def __init__(self, path, augment=False, crop_size=256, transform=None, segmentation=False, angle_encoding="sin"):
-        cv2.startWindowThread()
         self.data = pd.read_csv(path)
         self.images = list(set(self.data.iloc[:, 0]))
         self.sizes = self.data.dropna()['ImageId'].dropna().value_counts()
@@ -29,7 +32,7 @@ class AirBusDataset(Dataset):
         self.stat_s = []
         self.down_ratio = 2
         self.transforms = transform
-        self.data_cols = {"pos": 2, "wh": 2, "bias": 2, "angle": 2 if angle_encoding =="sin" else 1}
+        self.data_cols = {"pos": 2, "wh": 2, "bias": 2, "angle": 2 if angle_encoding == "sin" else 1}
         self.segmentation = segmentation
         self.angle_encoding = angle_encoding
 
@@ -45,7 +48,7 @@ class AirBusDataset(Dataset):
         best = None
         val = 0
         for w, h in itertools.product(np.arange(-2, 1, 1),
-                                     np.arange(-2, 1, 1)):
+                                      np.arange(-2, 1, 1)):
             for x, y in itertools.product(np.arange(-1, 2, 1), np.arange(-1, 2, 1)):
                 c_rect = (rect[0][0] + x, rect[0][1] + y), (rect[1][0] + w, rect[1][1] + h), rect[2]
                 cont = np.int0(cv2.boxPoints(c_rect)[None, :, :])
@@ -91,7 +94,6 @@ class AirBusDataset(Dataset):
             return img, [obj for obj in objects if obj.sum() > 0]
         nd_crop = np.array(self.crop_size)
         nd_size = np.array(self.img_size)
-        choise = None
         if np.random.rand() > 0.3 and objects:
             choise = np.random.randint(0, len(objects) - 1) if len(objects) > 1 else 0
             center = np.clip(np.random.normal(centroids[choise], nd_crop / 18), nd_crop / 2, nd_size - nd_crop / 2 - 1)
@@ -99,7 +101,7 @@ class AirBusDataset(Dataset):
             center = np.clip(np.random.normal(nd_size / 2, nd_size / 4), nd_crop / 2, nd_size - nd_crop / 2 - 1)
         center = center.astype(np.uint32)
         img = img[center[1] - self.crop_size[1] // 2: center[1] + self.crop_size[1] // 2,
-                  center[0] - self.crop_size[0] // 2: center[0] + self.crop_size[0] // 2, :].copy()
+              center[0] - self.crop_size[0] // 2: center[0] + self.crop_size[0] // 2, :].copy()
         nobjects = [obj[center[1] - self.crop_size[1] // 2: center[1] + self.crop_size[1] // 2,
                     center[0] - self.crop_size[0] // 2: center[0] + self.crop_size[0] // 2].copy()
                     for obj in objects]
@@ -115,9 +117,9 @@ class AirBusDataset(Dataset):
             for i, obj in enumerate(objects):
                 original = obj
                 decoded = cv2.medianBlur(cv2.dilate(cv2.erode(original,
-                                                               cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))),
+                                                              cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))),
                                                     cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))), ksize=3)
-                rect, bbox = self.abj_rect(decoded, original) if (decoded>0).sum() > 0 else (None, None)
+                rect, bbox = self.abj_rect(decoded, original) if (decoded > 0).sum() > 0 else (None, None)
                 if rect:
                     seg_mask += decoded
                     down_rect = ((int(rect[0][0] // self.down_ratio + 0.5), int(rect[0][1] // self.down_ratio + 0.5)),
@@ -133,16 +135,10 @@ class AirBusDataset(Dataset):
                     assert center_mask[0, int(down_rect[0][1]), int(down_rect[0][0])] == 1
                     assert int(down_rect[0][0]) * self.down_ratio + df[0] == rect[0][0]
                     if self.angle_encoding == "sin":
-                        # if rect[1][1] > rect[1][0]:
-                        #     angle = 90 - rect[2]
-                        #     rect = list(rect)
-                        #     rect[1] = rect[1][1], rect[1][0]
-                        # else:
-                        #     angle = -rect[2]
-                        angle = -4 *rect[2]
+                        angle = -4 * rect[2]
                         item = data_type(down_rect[0], rect[1], df, (np.cos(angle), np.sin(angle)))
                     else:
-                        item = data_type(down_rect[0], rect[1], df, (90+rect[2],))
+                        item = data_type(down_rect[0], rect[1], df, (90 + rect[2],))
                     for key, value in item._asdict().items():
                         assert isinstance(value, tuple) or isinstance(value, list)
                         dims[key].append(value)
@@ -158,15 +154,12 @@ class AirBusDataset(Dataset):
         center_mask, dimension_data, seg_mask = self.get_masks(masks)
 
         self.stat[center_mask.sum() > 1e-05] += 1
-        # cv2.imshow("img", cv2.resize(img, (512,512)))
-        # cv2.imshow("mask", cv2.resize(center_mask.transpose(1,2,0), (512,512)))
-        # cv2.waitKey()
 
         ret = {"input": img.transpose(2, 0, 1).astype(np.float32),
                "center": center_mask.astype(np.float32)
                # "instance_seg": np.array(masks).astype(np.float32)
                # "seg": seg_mask.astype(np.float32)
-        }
+               }
         if self.segmentation:
             ret.update({"instance_seg": np.array(masks).astype(np.float32)})
         for key, val in dimension_data.items():
@@ -178,4 +171,3 @@ class AirBusDataset(Dataset):
                                           self.data_cols[key]), dtype=np.int64 if key == "pos" else np.float32)
         ret.update(dimension_data)
         return ret
-

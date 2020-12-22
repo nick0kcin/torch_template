@@ -1,18 +1,22 @@
-from .base_trainer import BaseTrainer
-from albumentations import Flip, ShiftScaleRotate, Normalize
-import cv2
-import numpy as np
-from torch.nn.functional import max_pool2d
 import functools
 from copy import copy
-from torch import Tensor, atan2
+
+import cv2
+import numpy as np
+from albumentations import Normalize
+from torch import Tensor
+from torch.nn.functional import max_pool2d
+
 from transforms.MedianBlur import MedianBlur
-from torchvision import transforms
+from .base_trainer import BaseTrainer
+
 
 class ObjDetKPTrainer(BaseTrainer):
-    def __init__(self, model, losses, loss_weights, metrics, teacher=None, optimizer=None, num_iter=-1, print_iter=-1, device=None,
-                 batches_per_update=1, window_r=3, nms_thr=0.75, k=200, down_ratio=2, thr=0.1):
-        super(ObjDetKPTrainer, self).__init__(model, losses, loss_weights, metrics, teacher, optimizer, num_iter, print_iter,
+    def __init__(self, model, losses, loss_weights, metrics, teacher=None, optimizer=None, num_iter=-1, print_iter=-1,
+                 device=None,
+                 batches_per_update=1, window_r=3, nms_thr=0.75, k=200, down_ratio=4, thr=0.1):
+        super(ObjDetKPTrainer, self).__init__(model, losses, loss_weights, metrics, teacher, optimizer, num_iter,
+                                              print_iter,
                                               device, batches_per_update)
         self.window_r = window_r
         self.nms_thr = nms_thr
@@ -22,12 +26,13 @@ class ObjDetKPTrainer(BaseTrainer):
 
     def predict(self, dataloader, tta=None):
         return super(ObjDetKPTrainer, self)._predict(dataloader,
-                                                      tta,
-                                                      self.get_rects,
-                                                      self.nms)
+                                                     tta,
+                                                     self.get_rects,
+                                                     self.nms)
 
     def get_rects_batch(self, output, scale, image_id=None):
-        return [self.get_rects(output, scale, i, 0 if image_id is None else image_id.item()) for i in range(output[-1]["center"].shape[0])]
+        return [self.get_rects(output, scale, i, 0 if image_id is None else image_id.item()) for i in
+                range(output[-1]["center"].shape[0])]
 
     def get_rects_batch_debug(self, output, scale, image_id=None):
         return [self.get_debug_rects(output, scale, i) for i in range(output["center"].shape[0])]
@@ -101,12 +106,12 @@ class ObjDetKPTrainer(BaseTrainer):
         for i in idx:
             if "angle" in output:
                 rect = (
-                          (x[i].item() * self.down_ratio + dx[i].item() * scale,
-                           y[i].item() * self.down_ratio + dy[i].item() * scale),
-                          (w[i].item() * scale,
-                           h[i].item() * scale),
-                           angle[i].item() - 90
-               )
+                    (x[i].item() * self.down_ratio + dx[i].item() * scale,
+                     y[i].item() * self.down_ratio + dy[i].item() * scale),
+                    (w[i].item() * scale,
+                     h[i].item() * scale),
+                    angle[i].item() - 90
+                )
                 # print("out", rect)
             else:
                 rect = (int(points[i, 3].item() * self.down_ratio - w[i].item() / 2 + dy[i].item()) * scale,
@@ -154,14 +159,8 @@ class ObjDetKPTrainer(BaseTrainer):
         for i, box in enumerate(boxes):
             if len(box["bbox"]) == 3:
                 points = cv2.boxPoints(box["bbox"])[None, :, :]
-                cv2.fillConvexPoly(mask[i,:,:], points.astype(np.int32),
+                cv2.fillConvexPoly(mask[i, :, :], points.astype(np.int32),
                                    1.0)
-            # if len(boxes) == 1:
-            #     cv2.imshow("mask", mask[0,:,:]*255)
-            #     cv2.waitKey()
-        # channels = [(mask == i).astype(np.float32) for i in range(1, len(boxes) + 1)] if boxes \
-        #     else mask.astype(np.float32)[None, :, :]
-        # print([chan.sum() for chan in channels])
         return Tensor(mask)
 
     def boxes_to_segmap_batch(self, batch_boxes, shape):
@@ -177,14 +176,16 @@ class ObjDetKPTrainer(BaseTrainer):
 
     def debug(self, dataloader):
         return self.metric_handler(super(ObjDetKPTrainer, self)._debug_run(dataloader,
-                              mapper=self.get_rects_batch_debug,
-                              label_mapper=lambda x: x["instance_seg"],
-                              aggregator=lambda x: self.boxes_to_segmap_batch(x,
-                                                                             dataloader.dataset.size)
-                             ))
+                                                                           mapper=self.get_rects_batch_debug,
+                                                                           label_mapper=lambda x: x["instance_seg"],
+                                                                           aggregator=lambda
+                                                                               x: self.boxes_to_segmap_batch(x,
+                                                                                                             dataloader.dataset.size)
+                                                                           ))
+
     def visualize(self, dataloader):
         predictor = super()._predict(dataloader, tta=None,
-                                     mapper=lambda batch,i,j: (self.get_rects_batch(batch,i,j), batch[0]["center"]),
+                                     mapper=lambda batch, i, j: (self.get_rects_batch(batch, i, j), batch[0]["center"]),
                                      label_mapper=lambda x: x,
                                      aggregator=lambda x: (self.nms_batch(x[0]), x[1]))
         cv2.startWindowThread()
@@ -193,16 +194,12 @@ class ObjDetKPTrainer(BaseTrainer):
             std=[1 / 0.229, 1 / 0.224, 1 / 0.255], max_pixel_value=1
         )
         for i, (img, (rects, map), gt) in enumerate(predictor):
-            # loss = self.loss["center"](map, gt)
             loss = 1
-            # print(gt["meta"], loss)
             if loss > 0:
                 im = inv_normalize(image=img.numpy()[0, :, :, :].transpose(1, 2, 0))["image"] * 255
                 img = im.astype(np.uint8)
                 mp = map.sigmoid().cpu().numpy()[0, :, :, :].max(0)
                 mp = cv2.resize(mp, (4 * mp.shape[1], 4 * mp.shape[0]))
-                # gt_ = gt["center"].cpu().numpy()[0, :, :, :].max(0)
-                # gt_ = cv2.resize(gt_, (1024, 1024))
                 im = np.zeros(img.shape, dtype=np.uint8)
                 colors = [
                     (255, 0, 0),  # plane
@@ -226,34 +223,18 @@ class ObjDetKPTrainer(BaseTrainer):
                     "box",
                     "tower"
                 ]
+                # names = ["building", "nuclear", "oil", "kung", "tank", "tent", "npz"]
                 for rect in rects[0]:
-                    # contour = cv2.boxPoints(rect["bbox"])
-                    # cv2.drawContours(im, [np.int0(contour)], 0, (255, 0, 255), 1)
                     cv2.rectangle(im, (rect["bbox"][0], rect["bbox"][1]),
-                                      (rect["bbox"][0] + rect["bbox"][2],
-                                       rect["bbox"][1] + rect["bbox"][3]),
+                                  (rect["bbox"][0] + rect["bbox"][2],
+                                   rect["bbox"][1] + rect["bbox"][3]),
                                   colors[rect["category_id"]], thickness=2)
 
-                    c1, c2 = (rect["bbox"][0], rect["bbox"][1]),\
+                    c1, c2 = (rect["bbox"][0], rect["bbox"][1]), \
                              (rect["bbox"][0] + rect["bbox"][2], rect["bbox"][1] + rect["bbox"][3])
                     tf = 1  # font thickness
                     t_size = cv2.getTextSize(names[rect["category_id"]], 0, fontScale=2 / 3, thickness=tf)[0]
-                    c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3
-                    # cv2.rectangle(img, c1, c2, colors[rect["category_id"]], -1, cv2.LINE_AA)  # filled
                     cv2.putText(im, names[rect["category_id"]], (c1[0], c1[1] - 2), 0, 2 / 3, [225, 255, 255],
                                 thickness=tf,
                                 lineType=cv2.LINE_AA)
-                # gt_rects = gt["meta"]
-                # for rect in gt_rects:
-                #     cv2.rectangle(im, (rect["bbox"][0].item(), rect["bbox"][1].item()),
-                #                   (rect["bbox"][0].item() + rect["bbox"][2].item(),
-                #                    rect["bbox"][1].item() + rect["bbox"][3].item()),
-                #                   tuple([i + 200 if i < 255 else i - 100 for i in colors[rect["category_id"].item()]]),
-                #                   thickness=1, lineType=cv2.LINE_4)
-                # cv2.imshow("res", im | img)
-                # cv2.imshow("mp", mp)
-                # cv2.imshow("gt", gt_)
-                # cv2.imshow("img", img)
-                # cv2.waitKey(10)
                 return im, mp
-

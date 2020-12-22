@@ -1,14 +1,12 @@
-import numpy as np
-import pandas as pd
-from torch.utils.data import Dataset
-import os
-import cv2
 import itertools
+import os
 from collections import Counter
-from albumentations import *
-from image_utils import get_masks_from_polygon, draw_gaussian, masks_to_rot_bboxes, zipped_masks_to_rot_bboxes
 from collections import namedtuple
-import time
+
+from albumentations import *
+from torch.utils.data import Dataset
+
+from image_utils import get_masks_from_polygon, draw_gaussian, zipped_masks_to_rot_bboxes
 
 
 class Dota(Dataset):
@@ -28,8 +26,8 @@ class Dota(Dataset):
         self.down_ratio = 4
         self.data_cols = {"pos": 2, "wh": 2, "bias": 2, "angle": 1}
         weights = {key: (max(self.classes_dict.values()) / val) ** 2 for key, val in self.classes_dict.items()}
-        self.sample_weights = np.array([sum([val * weights[key] for key,val in counter.items()]) +1e-07
-                               for counter in self.sample_labels])
+        self.sample_weights = np.array([sum([val * weights[key] for key, val in counter.items()]) + 1e-07
+                                        for counter in self.sample_labels])
         self.sample_weights /= sum(self.sample_weights)
         # self.exp = {cls: sum([ v * self.sample_labels[i][cls] for i, v in enumerate(self.sample_weights)]) for cls in self.classes_dict}
         self.class_idx = {cls: i for i, cls in enumerate(sorted(self.classes_dict.keys() - {"bomb-goal"}))}
@@ -68,8 +66,8 @@ class Dota(Dataset):
             x, y = min(sx, img.shape[1]), min(sy, img.shape[0])
             nx, ny = max(x - size, 0), max(y - size, 0)
             if last is None:
-                last = np.array([x,y,nx,ny])
-            elif np.abs(np.array([x,y,nx,ny]) - last).mean() < 20:
+                last = np.array([x, y, nx, ny])
+            elif np.abs(np.array([x, y, nx, ny]) - last).mean() < 20:
                 continue
             crop = img[ny: y, nx: x, :].copy()
             vertex = np.array([nx, ny])
@@ -84,7 +82,7 @@ class Dota(Dataset):
             assert crop.shape == (min(img.shape[0], size), min(img.shape[1], size), 3)
             cv2.imwrite(os.path.join(self.path, f"cutted_images/{name}_{i}.png"), crop)
             with open(os.path.join(self.path, f"cutted_labels/{name}_{i}.txt"), "w") as file:
-                file.write("\n".join([f"{str(obj.reshape(1, 8)[0,:].tolist())[1:-1]}, {class_label}"
+                file.write("\n".join([f"{str(obj.reshape(1, 8)[0, :].tolist())[1:-1]}, {class_label}"
                                       for obj, class_label in good_objects]))
             # self.visualize(crop, good_objects)
             # self.visualize(crop, [(obj - vertex, class_label)
@@ -92,42 +90,6 @@ class Dota(Dataset):
 
     def __len__(self):
         return len(self.images)
-
-    # def crop_image(self, img, objects):
-    #     centroids = []
-    #     if self.transforms:
-    #         transformed = self.transforms(image=img, points=objects)
-    #         if "points" in transformed and transformed["points"] is not None:
-    #             for points in transformed["points"]:
-    #                 centroids.append(points.mean(axis=0))
-    #             objects = [obj for i, obj in enumerate(objects)
-    #                        if centroids[i][0] < img.shape[1] and centroids[i][1] < img.shape[0]]
-    #             centroids = [centroid for centroid in centroids
-    #                          if centroid[0] < img.shape[1] and centroid[1] < img.shape[0]]
-    #         img = transformed["image"]
-    #     else:
-    #         for obj in objects:
-    #             centroids.append(obj.mean(axis=0))
-    #     if not self.crop:
-    #         return img, objects
-    #     nd_crop = np.array(self.crop_size)
-    #     nd_size = np.array(img.shape[1::-1])
-    #     choise = None
-    #     if np.random.rand() > 0.3 and objects:
-    #         choise = np.random.randint(0, len(objects) - 1) if len(objects) > 1 else 0
-    #         center = np.clip(np.random.normal(
-    #         centroids[choise], nd_crop / 28), nd_crop / 2, nd_size - nd_crop / 2 - 1)
-    #     else:
-    #         center = np.clip(np.random.normal(nd_size / 2, nd_size / 4), nd_crop / 2, nd_size - nd_crop / 2 - 1)
-    #     center = center.astype(np.uint32)
-    #     img = img[center[1] - self.crop_size[1] // 2: center[1] + self.crop_size[1] // 2,
-    #           center[0] - self.crop_size[0] // 2: center[0] + self.crop_size[0] // 2, :].copy()
-    #     nobjects = [np.clip(obj, [center[0] - self.crop_size[0] // 2, center[1] - self.crop_size[1] // 2],
-    #           [center[0] + self.crop_size[0] // 2, center[1] + self.crop_size[1] // 2]) for obj in objects]
-    #     # assert (not choise) or cv2.contourArea(nobjects[choise].astype(np.float32)[:, None, :]) > 5,
-    #     # (center, centroids[choise]) if choise else None
-    #     nobjects = [obj for obj in nobjects if cv2.contourArea(np.float32(obj)[:, None, :]) > 5]
-    #     return img, nobjects
 
     @staticmethod
     def visualize(img, objects, name="img"):
@@ -204,21 +166,10 @@ class Dota(Dataset):
         # self.cut_big_image(img, objects, self.images[item][:-4])
 
         try:
-            # start = time.clock()
             masks = np.load(os.path.join(self.path, "masks", self.images[item].replace(".txt", ".npy")))
-            # t = time.clock() - start
-            # print("load", t)
         except:
-            # start = time.clock()
             masks = np.stack(get_masks_from_polygon(objects, img.shape[:2]), axis=-1)
-            # t = time.clock() - start
-            # if t > 0.025:
-            #     np.save(os.path.join(self.path, "masks", self.images[item].replace(".txt", ".npy")), masks)
-            # print("make", t)
-        # # #
-        # # if len(objects) > 30:
-        # #     np.save(os.path.join(self.path, "masks", self.images[item].replace(".txt", ".npy")), masks)
-        # #
+
         transformed = self.transforms(image=img,
                                       mask=masks)
         bboxes = zipped_masks_to_rot_bboxes(transformed["mask"], len(objects_lab))
@@ -226,16 +177,6 @@ class Dota(Dataset):
         assert len(bboxes) == len(objects_lab)
         bboxes = [(box, label) for box, label in zip(bboxes, objects_lab) if box and label != "bomb-goal"]
         center_mask, dimension_data = self.get_masks(bboxes, img.shape[:2])
-
-        # img = np.zeros(shape=(512, 512, 3))
-        # center_mask = np.zeros(shape=(len(self.class_idx),) + tuple([i //self.down_ratio for i in img.shape[:2]]))
-        # data_type = namedtuple("dims", self.data_cols.keys())
-        # dimension_data = {value: [] for value in self.data_cols}
-        # for i in range(1):
-        #     item = data_type((np.random.randint(0, 60), np.random.randint(0, 60)), (10, 10), (1, 1), (0,))
-        #     for key, value in item._asdict().items():
-        #         assert isinstance(value, tuple) or isinstance(value, list)
-        #         dimension_data[key].append(value)
 
         ret = {"input": img.transpose(2, 0, 1).astype(np.float32),
                "center": center_mask.astype(np.float32),
@@ -250,9 +191,4 @@ class Dota(Dataset):
                                           self.data_cols[key]), dtype=np.int64 if key == "pos" else np.float32)
         ret.update(dimension_data)
 
-        # if not (item % 2):
-        #     self.cut_big_image(img, objects, self.images[item][:-4])
-        # self.visualize(img, objects)
-        # self.visualize_boxes(img, bboxes, "boxes")
         return ret
-        # return item

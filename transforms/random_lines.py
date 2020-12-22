@@ -1,14 +1,13 @@
-from numpy.random import random, uniform, randint, choice
 import math
-import torch
+import os
 import cv2
 import numpy as np
-import os
+from albumentations import ImageOnlyTransform
 from albumentations.augmentations.transforms import Lambda
-from albumentations import  ImageOnlyTransform
+from numpy.random import random, randint, choice
 
 
-def random_lines_factory(min_lines = 5, max_lines = 80, min_length = 20, max_length = 100, p =0.5):
+def random_lines_factory(min_lines=5, max_lines=80, min_length=20, max_length=100, p=0.5):
     def random_lines(img, **kwargs):
         n = randint(min_lines, max_lines)
         mask = np.zeros_like(img)
@@ -19,13 +18,14 @@ def random_lines_factory(min_lines = 5, max_lines = 80, min_length = 20, max_len
             x2 = int(x1 + length * math.cos(angle))
             y2 = int(y1 + length * math.sin(angle))
             try:
-                mask = cv2.line(np.zeros(img.shape).astype(np.uint8).copy(), (x1, y1), (x2, y2), (255, 255, 255), randint(1, 3))
+                mask = cv2.line(np.zeros(img.shape).astype(np.uint8).copy(), (x1, y1), (x2, y2), (255, 255, 255),
+                                randint(1, 3))
             except TypeError:
                 print("a")
         img = img & ~mask if random() < p else img | mask
         return img
-    return random_lines
 
+    return random_lines
 
 
 def random_mmm_factory(p=0.5):
@@ -33,17 +33,16 @@ def random_mmm_factory(p=0.5):
         c1 = randint(0, img.shape[0] - 1), randint(0, img.shape[1] - 1)
         tf = randint(1, 3)
         mask = np.zeros_like(img)
-        # t_size = cv2.getTextSize("mm", 0, fontScale=tf / 3, thickness=tf)[0]
-        # c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3
-        # cv2.rectangle(img, c1, c2, colors[rect["category_id"]], -1, cv2.LINE_AA)  # filled
         try:
-            mask = cv2.putText(np.zeros(img.shape).astype(np.uint8).copy(), "mm", (c1[0], c1[1] - 2), 0, 2 / 3, [225, 255, 255],
-                    thickness=tf,
-                    lineType=cv2.LINE_AA)
+            mask = cv2.putText(np.zeros(img.shape).astype(np.uint8).copy(), "mm", (c1[0], c1[1] - 2), 0, 2 / 3,
+                               [225, 255, 255],
+                               thickness=tf,
+                               lineType=cv2.LINE_AA)
         except TypeError:
             print("b")
         img = img & ~mask if random() < p else img | mask
         return img
+
     return random_mmm
 
 
@@ -54,11 +53,12 @@ def random_microscope_factory():
         dy = randint(0, img.shape[1] // 4)
         try:
             mask = cv2.circle(np.zeros(img.shape).astype(np.uint8).copy(), (img.shape[0] // 2, img.shape[1] // 2),
-                   randint(img.shape[0] // 3, int(img.shape[0] / 1.5) ), (255,255,255), -1)
+                              randint(img.shape[0] // 3, int(img.shape[0] / 1.5)), (255, 255, 255), -1)
         except TypeError:
             print("c")
         img &= mask
         return img
+
     return random_microscope
 
 
@@ -75,12 +75,12 @@ def random_microscope(p=0.5):
 
 
 def random_invert_channels(p=0.5):
-    return Lambda(lambda x: x[:,:,::-1], p=p)
+    return Lambda(lambda x: x[:, :, ::-1], p=p)
 
 
 class AdvancedHairAugmentation(ImageOnlyTransform):
 
-    def __init__(self, hairs: int = 5, hairs_folder: str = "" , always_apply=False, p=0.5):
+    def __init__(self, hairs: int = 5, hairs_folder: str = "", always_apply=False, p=0.5):
         self.hairs = hairs
         self.hairs_folder = hairs_folder
         super().__init__(always_apply, p)
@@ -96,8 +96,8 @@ class AdvancedHairAugmentation(ImageOnlyTransform):
 
         for _ in range(n_hairs):
             hair = cv2.imread(os.path.join(self.hairs_folder, choice(hair_images)))
-            if np.max(hair.shape) > img.shape[0] :
-                hair = cv2.resize(hair, (0,0), fx=0.5, fy=0.5)
+            if np.max(hair.shape) > img.shape[0]:
+                hair = cv2.resize(hair, (0, 0), fx=0.5, fy=0.5)
             hair = cv2.flip(hair, choice([-1, 0, 1]))
             hair = cv2.rotate(hair, choice([0, 1, 2]))
 

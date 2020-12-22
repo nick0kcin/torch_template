@@ -1,5 +1,5 @@
-from torch.nn import Module
 import torch
+from torch.nn import Module
 
 
 class FocalLoss(Module):
@@ -13,10 +13,8 @@ class FocalLoss(Module):
         self.thr = thr
 
     def forward(self, pred, gt):
-        # sizes = torch.sqrt(gt["wh"].prod(dim=1, keepdim=True).clamp(0, 400) / 400)
         gt = gt[self.key].sigmoid() if gt[self.key].min() < 0 else gt[self.key]
         pred = pred[self.key] if isinstance(pred, dict) else pred
-        # pred = predict[:, :, :gt.shape[2], :gt.shape[3]]
         if gt.max() == 1:
             pos_inds = (gt == 1.0).float()
             neg_inds = gt.lt(1).float()
@@ -26,8 +24,7 @@ class FocalLoss(Module):
             maxs = (maxs == gt[:, :, 1:-1, 1:-1]) & (maxs > 0.2)
             pos_inds[:, :, 1:-1, 1:-1] = maxs
             pos_inds *= gt
-            neg_inds = (torch.ones_like(gt) - pos_inds)* (1 - gt)
-
+            neg_inds = (torch.ones_like(gt) - pos_inds) * (1 - gt)
 
         neg_weights = torch.pow(1 - gt, self.b).float()
         loss = 0
@@ -49,7 +46,6 @@ class FocalLoss(Module):
             loss_value = (loss * (loss > self.thr).float()).sum() / (loss > self.thr).sum()
         else:
             loss_value = (loss * (loss > self.thr).float()).sum() / (loss > self.thr).sum()
-            # loss_value = loss.mean()
 
         return loss_value
 
@@ -57,4 +53,5 @@ class FocalLoss(Module):
 def get_focal_loss(sigmoid=True, a=2, b=4):
     def get_loss():
         return FocalLoss(sigmoid, a, b)
+
     return get_loss

@@ -1,11 +1,12 @@
+import sys
+import numpy as np
 import torch
 from torch.nn import DataParallel
 from tqdm import tqdm
-import sys
-from albumentations import Compose
 
 try:
     from apex import amp
+
     APEX = True
 except ModuleNotFoundError:
     APEX = False
@@ -22,23 +23,29 @@ class ModelWithLoss(torch.nn.Module):
         outputs = {}
         b = len(batch["input"].shape) == 5
         for key in batch:
-            if b:
+            if b and not isinstance(batch[key], list):
                 batch[key] = batch[key].view((-1, *batch[key].shape[2:]))
             if key.startswith("input"):
                 out = self.model(batch[key])
                 outputs.update({k + key[5:]: val for k, val in out[-1].items()})
-        loss_value = 0
-        loss_stats = {key: 0.0 for key in self.loss}
+        loss_value = 0.0
+        loss_stats = {key: -1 for key in self.loss}
         if isinstance(outputs, dict):
             for key, loss in self.loss.items():
-                loss_stats[key] = loss(outputs, batch)
+                # if self.loss_weights[key]:
+                # if key in outputs:
+                try:
+                    loss_stats[key] = loss(outputs, batch)
+                except KeyError:
+                    pass
         else:
             key = list(self.loss.keys())[0]
             loss_stats[key] = list(self.loss.values())[0](outputs, batch[key])
 
         loss_value += sum({key: self.loss_weights[key] * val
-                           for key, val in loss_stats.items() if not torch.isnan(val)}.values())
-        return outputs, loss_value, loss_stats
+                           for key, val in loss_stats.items() if not isinstance(val, int) or val > 0}.values())
+        return outputs, loss_value, {key: val for key, val in loss_stats.items() if not isinstance(val, int) or val > 0}
+
 
 class DistillModelWithLoss(torch.nn.Module):
     def __init__(self, model, teacher, loss, loss_weights, distill_weight=1):
@@ -65,7 +72,8 @@ class DistillModelWithLoss(torch.nn.Module):
             key = list(self.loss.keys())[0]
             loss_stats[key] = list(self.loss.values())[0](outputs, batch[key])
 
-        distill_loss_stats = {f"d_{key}": 0.0 for key in self.loss if not key.startswith("d_") and batch[key].shape == outputs[0][key].shape}
+        distill_loss_stats = {f"d_{key}": 0.0 for key in self.loss if
+                              not key.startswith("d_") and batch[key].shape == outputs[0][key].shape}
         if isinstance(outputs[-1], dict):
             for key, loss in self.loss.items():
                 if not key.startswith("d_") and batch[key].shape == outputs[0][key].shape:
@@ -82,7 +90,8 @@ class DistillModelWithLoss(torch.nn.Module):
 
 
 class BaseTrainer(object):
-    def __init__(self, model, losses, loss_weights, metrics, teacher=None,  optimizer=None, num_iter=-1, print_iter=-1, device=None,
+    def __init__(self, model, losses, loss_weights, metrics, teacher=None, optimizer=None, num_iter=-1, print_iter=-1,
+                 device=None,
                  batches_per_update=1):
         self.num_iter = num_iter
         self.print_iter = print_iter
@@ -92,7 +101,7 @@ class BaseTrainer(object):
         self.loss = losses
         self.loss_weights = loss_weights
         self.metric_handler = metrics
-        self.model_with_loss = ModelWithLoss(model, self.loss, self.loss_weights) if teacher is None\
+        self.model_with_loss = ModelWithLoss(model, self.loss, self.loss_weights) if teacher is None \
             else DistillModelWithLoss(model, teacher, self.loss, self.loss_weights)
 
     def set_device(self, gpus, device):
@@ -102,10 +111,11 @@ class BaseTrainer(object):
         else:
             self.model_with_loss = self.model_with_loss.to(device)
 
-        for state in self.optimizer.state.values():
-            for k, v in state.items():
-                if isinstance(v, torch.Tensor):
-                    state[k] = v.to(device=device, non_blocking=True)
+        if self.optimizer:
+            for state in self.optimizer.state.values():
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        state[k] = v.to(device=device, non_blocking=True)
 
     def to(self, batch):
         if not isinstance(batch, dict):
@@ -123,17 +133,20 @@ class BaseTrainer(object):
 
     def run_epoch(self, phase, epoch, data_loader):
         model_with_loss = self.model_with_loss
+        for key in self.loss:
+            self.loss[key].epoch = epoch
+
+        self.model_with_loss.module.model.epoch = epoch
+
         if phase == 'train':
             model_with_loss.train()
         else:
-            #model_with_loss = self.model_with_loss.module
             model_with_loss.eval()
             torch.cuda.empty_cache()
 
         results = dict()
         moving_loss = 0
         num_iters = len(data_loader) if self.num_iter < 0 else self.num_iter
-        loss_iters = 0
         with tqdm(data_loader, file=sys.stdout) as bar_object:
             for iter_id, batch in enumerate(bar_object):
 
@@ -142,166 +155,43 @@ class BaseTrainer(object):
                 batch = self.to(batch)
                 if phase == 'train':
                     output, loss, loss_stats = model_with_loss(batch)
+                    loss = loss.sum(-1)
                     loss = loss.mean() / self.batches_per_update
                 else:
                     with torch.no_grad():
                         output, loss, loss_stats = model_with_loss(batch)
+                        loss = loss.sum(-1)
                         loss = loss.mean() / self.batches_per_update
 
                 if phase == 'train':
                     if iter_id % self.batches_per_update == 0:
                         self.optimizer.zero_grad()
-                    # if APEX:
-                    #     with amp.scale_loss(loss, self.optimizer) as scaled_loss:
-                    #         scaled_loss.backward()
                     loss.backward()
                     if (iter_id + 1) % self.batches_per_update == 0:
                         self.optimizer.step()
                 moving_loss += loss.item()
-                results = {key:
-                               results.get(key, 0)
-                               + val.mean().item() if not torch.isnan(val.mean())
-                               else results.get(key, 0) *(iter_id + 1) / iter_id
-                               if  torch.nonzero(torch.isnan(val)).nelement()==val.nelement() else
-                               results.get(key, 0) +(val[1-torch.isnan(val)] /(1-torch.isnan(val).float()).sum()).item()
-                           for (key, val) in loss_stats.items()}
+                try:
+                    results = {key:
+                                   results.get(key, 0)
+                                   + val.mean(0).detach().cpu().numpy() if not torch.isnan(val.mean())
+                                   else results.get(key, 0) * (iter_id + 1) / iter_id
+                                   if torch.nonzero(torch.isnan(val)).nelement() == val.nelement() else
+                                   results.get(key, 0) + (
+                                               val[1 - torch.isnan(val)] / (1 - torch.isnan(val).float()).sum()).item()
+                               for (key, val) in loss_stats.items()}
+                except:
+                    a = 1
                 del loss, loss_stats
                 bar_object.set_postfix_str("{phase}:[{epoch}]' loss={loss} {losses}".
                                            format(phase=phase, epoch=epoch,
                                                   loss=moving_loss * self.batches_per_update / (iter_id + 1),
-                                                  losses={k: v / (iter_id + 1)
+                                                  losses={k: np.array2string(v / (iter_id + 1), precision=3)
                                                           for k, v in results.items()}))
                 bar_object.update(1)
-                # if self.print_iter > 0 and not (iter_id % self.print_iter):
-                #     bar_object.write(bar_object.__str__())
                 del output
         results = {k: v / num_iters for k, v in results.items()}
         results.update({'loss': moving_loss / num_iters})
         return results
-
-    def run_epoch_exp(self, phase, epoch, data_loader):
-        model_with_loss = self.model_with_loss
-        if phase == 'train':
-            model_with_loss.train()
-        else:
-            #model_with_loss = self.model_with_loss.module
-            model_with_loss.eval()
-            torch.cuda.empty_cache()
-
-        results = dict()
-        moving_loss = 0
-        num_iters = len(data_loader) if self.num_iter < 0 else self.num_iter
-        loss_iters = 0
-        saved_grads= [{} for i in range(self.batches_per_update)]
-        with tqdm(data_loader, file=sys.stdout) as bar_object:
-            for iter_id, batch in enumerate(bar_object):
-
-                if iter_id >= num_iters:
-                    break
-                batch = self.to(batch)
-                if phase == 'train':
-                    output, loss, loss_stats = model_with_loss(batch)
-                    loss = loss.mean() / self.batches_per_update
-                else:
-                    with torch.no_grad():
-                        output, loss, loss_stats = model_with_loss(batch)
-                        loss = loss.mean() / self.batches_per_update
-
-                if phase == 'train':
-                    self.optimizer.zero_grad()
-                    loss.backward()
-
-                    if iter_id > self.batches_per_update:
-                        for name, par in self.model_with_loss.named_parameters():
-                            for i, grads in enumerate(saved_grads):
-                                if i != iter_id  % self.batches_per_update:
-                                    par.grad += grads["name"]
-
-                    saved_grads[iter_id % self.batches_per_update] = {name: p.grad for name, p in self.model_with_loss.named_parameters()}
-
-                    self.optimizer.step()
-                    # if (iter_id + 1) % self.batches_per_update == 0:
-                    #     self.optimizer.step()
-                moving_loss += loss.item()
-                results = {key:
-                               results.get(key, 0)
-                               + val.mean().item() if not torch.isnan(val.mean())
-                               else results.get(key, 0) *(iter_id + 1) / iter_id
-                               if  torch.nonzero(torch.isnan(val)).nelement()==val.nelement() else
-                               results.get(key, 0) +(val[1-torch.isnan(val)] /(1-torch.isnan(val).float()).sum()).item()
-                           for (key, val) in loss_stats.items()}
-                del loss, loss_stats
-                bar_object.set_postfix_str("{phase} exp:[{epoch}]' loss={loss} {losses}".
-                                           format(phase=phase, epoch=epoch,
-                                                  loss=moving_loss * self.batches_per_update / (iter_id + 1),
-                                                  losses={k: v / (iter_id + 1)
-                                                          for k, v in results.items()}))
-                bar_object.update(1)
-                # if self.print_iter > 0 and not (iter_id % self.print_iter):
-                #     bar_object.write(bar_object.__str__())
-                del output
-        results = {k: v / num_iters for k, v in results.items()}
-        results.update({'loss': moving_loss / num_iters})
-        return results
-
-    # def run_distill_epoch(self, phase, epoch, data_loader):
-    #     model_with_loss = self.model_with_loss
-    #     if phase == 'train':
-    #         model_with_loss.train()
-    #     else:
-    #         # model_with_loss = self.model_with_loss.module
-    #         model_with_loss.eval()
-    #         torch.cuda.empty_cache()
-    #
-    #     results = dict()
-    #     moving_loss = 0
-    #     num_iters = len(data_loader) if self.num_iter < 0 else self.num_iter
-    #     loss_iters = 0
-    #     with tqdm(data_loader, file=sys.stdout) as bar_object:
-    #         for iter_id, batch in enumerate(bar_object):
-    #
-    #             if iter_id >= num_iters:
-    #                 break
-    #             batch = self.to(batch)
-    #             if phase == 'train':
-    #                 output, loss, loss_stats = model_with_loss(batch)
-    #                 loss = loss.mean() / self.batches_per_update
-    #             else:
-    #                 with torch.no_grad():
-    #                     output, loss, loss_stats = model_with_loss(batch)
-    #                     loss = loss.mean() / self.batches_per_update
-    #
-    #             if phase == 'train':
-    #                 if iter_id % self.batches_per_update == 0:
-    #                     self.optimizer.zero_grad()
-    #                 # if APEX:
-    #                 #     with amp.scale_loss(loss, self.optimizer) as scaled_loss:
-    #                 #         scaled_loss.backward()
-    #                 loss.backward()
-    #                 if (iter_id + 1) % self.batches_per_update == 0:
-    #                     self.optimizer.step()
-    #             moving_loss += loss.item()
-    #             results = {key:
-    #                            results.get(key, 0)
-    #                            + val.mean().item() if not torch.isnan(val.mean())
-    #                            else results.get(key, 0) * (iter_id + 1) / iter_id
-    #                            if torch.nonzero(torch.isnan(val)).nelement() == val.nelement() else
-    #                            results.get(key, 0) + (
-    #                                        val[1 - torch.isnan(val)] / (1 - torch.isnan(val).float()).sum()).item()
-    #                        for (key, val) in loss_stats.items()}
-    #             del loss, loss_stats
-    #             bar_object.set_postfix_str("{phase}:[{epoch}]' loss={loss} {losses}".
-    #                                        format(phase=phase, epoch=epoch,
-    #                                               loss=moving_loss * self.batches_per_update / (iter_id + 1),
-    #                                               losses={k: v / (iter_id + 1)
-    #                                                       for k, v in results.items()}))
-    #             bar_object.update(1)
-    #             # if self.print_iter > 0 and not (iter_id % self.print_iter):
-    #             #     bar_object.write(bar_object.__str__())
-    #             del output
-    #     results = {k: v / num_iters for k, v in results.items()}
-    #     results.update({'loss': moving_loss / num_iters})
-    #     return results
 
     def val(self, epoch, data_loader):
         return self.run_epoch('val', epoch, data_loader)
@@ -309,7 +199,7 @@ class BaseTrainer(object):
     def train(self, epoch, data_loader):
         return self.run_epoch('train', epoch, data_loader)
 
-    def _predict(self, dataloader,tta=None, mapper=None, label_mapper=None, aggregator=None):
+    def _predict(self, dataloader, tta=None, mapper=None, label_mapper=None, aggregator=None):
         model = DataParallel(self.model_with_loss.module.model.eval(), device_ids=[0, 1]).eval()
         for i, batch in enumerate(dataloader):
             outputs = []
@@ -319,20 +209,15 @@ class BaseTrainer(object):
                 if len(inp.shape) > 4:
                     tta = inp.shape[1]
                     inp = inp.view(-1, inp.shape[-3], inp.shape[-2], inp.shape[-1])
-                t_output = model(inp)#
-                if tta:# [0]
-                    t_output = [ { key: val.view(*tuple([val.shape[0] // tta, tta] +[el for el in val.shape[1:]])).sigmoid().mean(1)
-                               for key, val in t_output[0].items()}]
-            data = mapper(t_output, 1, batch["meta"] if " meta" in batch else None) if mapper else t_output # !!!!
+                t_output = model(inp)  #
+                if not isinstance(t_output, list):
+                    t_output = [{"y": t_output}]
+                if tta:  # [0]
+                    t_output = [{key: val.view(
+                        *tuple([val.shape[0] // tta, tta] + [el for el in val.shape[1:]])).sigmoid().mean(1)
+                                 for key, val in t_output[0].items()}]
+            data = mapper(t_output, 1, batch["meta"] if " meta" in batch else None) if mapper else t_output  # !!!!
             outputs.extend(data)
-            # if tta:
-            #     for transform in tta:
-            #         with torch.no_grad():
-            #             t_batch = transform(batch)
-            #             t_output = self.model_with_loss.module.model(t_batch["input"])[0]
-            #         data = mapper(t_output, #!!!!
-            #                       batch["input"].shape[-1] / t_batch["input[-1"].shape[-1], i) if mapper else t_output
-            #         outputs.extend(data)
             aggregation = aggregator(outputs) if aggregator else outputs
             labels = label_mapper(batch) if label_mapper else None
             yield (inp.cpu(), aggregation, labels) if label_mapper else (inp.cpu(), aggregation)
@@ -354,4 +239,3 @@ class BaseTrainer(object):
                                                  mapper=mapper,
                                                  label_mapper=lambda x: x.get(gt_key, None),
                                                  aggregator=aggregator))
-

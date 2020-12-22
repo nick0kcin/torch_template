@@ -1,0 +1,15 @@
+mask:
+    weight: 1
+    func: SegLoss
+    kwargs:
+        bce_weight: 0.05
+        dice_smooth: 0.001
+
+iou:
+    weight: 0
+    func: SegLoss
+    kwargs:
+        bce_weight: 0
+        dice_smooth: 0.001
+        thr: 0.5
+        inv: False

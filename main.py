@@ -2,10 +2,10 @@ import os
 import torch.utils.data
 from torch import device
 from opts import opts
-from models.models import  load_model, save_model
+from models.__init__ import  load_model, save_model
 from trainers.obj_det_kp_trainer import ObjDetKPTrainer as Trainer
 from history import History
-from logger import Logger
+from trainingmanager import TrainingManager
 from torch.utils.tensorboard import SummaryWriter
 from albumentations import *
 import cv2
@@ -21,32 +21,27 @@ except ModuleNotFoundError:
 
 if __name__ == '__main__':
     opt = opts().parse()
-    logger = Logger(opt.save_dir)
+    logger = TrainingManager(opt.save_dir)
     history = History(opt.save_dir, opt.resume)
-    # writer = SummaryWriter()
+    writer = SummaryWriter()
     torch.backends.cudnn.benchmark = True
     print(opt)
     transforms = {
         "train":  Compose([
-            # ShiftScaleRotate(rotate_limit=90, scale_limit=(-0.35, 0.3),
-            #                  border_mode=cv2.BORDER_CONSTANT),
-            # PadIfNeeded(min_height=512, min_width=512, border_mode=cv2.BORDER_CONSTANT, always_apply=True),
-            # RandomCrop(512, 512, always_apply=True),
+            ShiftScaleRotate(rotate_limit=90, scale_limit=(-0.35, 0.3),
+                             border_mode=cv2.BORDER_CONSTANT),
+            PadIfNeeded(min_height=512, min_width=512, border_mode=cv2.BORDER_CONSTANT, always_apply=True),
+            RandomCrop(512, 512, always_apply=True),
             Flip(),
             Transpose(),
-            # ElasticTransform(alpha=250, sigma=30, p=0.2, border_mode=cv2.BORDER_CONSTANT),
-            # ImageCompression(quality_lower=80, always_apply=True),
-            # CoarseDropout(max_holes=40, min_holes=6),
+            ElasticTransform(alpha=250, sigma=30, p=0.2, border_mode=cv2.BORDER_CONSTANT),
+            ImageCompression(quality_lower=80, always_apply=True),
+            CoarseDropout(max_holes=40, min_holes=6),
             ToGray(),
             OneOf([
-                # RandomRain(),
-                CoarseDropout(max_holes=40, min_holes=6),
-                # RandomFog(fog_coef_lower=0.4, fog_coef_upper=0.8, p=0.01)
-                ], p=0.2),
-            OneOf([
                 CLAHE(),
-                # MotionBlur(),
-                # RGBShift(),
+                MotionBlur(),
+                RGBShift(),
                 RandomBrightnessContrast()
                 ]),
             Normalize()
@@ -86,27 +81,19 @@ if __name__ == '__main__':
                       print_iter=opt.print_iter, num_iter=opt.num_iters, batches_per_update=opt.batches_per_update,
                       **logger.trainer_params)
     trainer.set_device(opt.gpus, opt.device)
-    # coco = loaders["test"].dataset.coco()
-    # json.dump(coco.dataset, open("val.json", "w"))
-    # loaders["train"].dataset.debug_big(71)
-    # loaders["train"].dataset.cut_images()
-    # loaders["val"].dataset.cut_images()
-    # for a in loaders["train"]:
-    #     print(a)
-    # for a in loaders["val"]:
-    #     print(a)
-    # loaders["val"].dataset.debug_big()
+    coco = loaders["test"].dataset.coco()
+
     if opt.test:
-        # log_dict_val = trainer.test(loaders["test"], verbose=1)
-        # coco = loaders["test"].dataset.coco()
-        # json.dump(log_dict_val, open(opt.save_dir + "/predict.json", "w"))
-        # coco_predicts = coco.loadRes(opt.save_dir + "/predict.json")
-        # coco_bp = coco.loadRes("/home/nick/PycharmProjects/airbus/exp/dla_34_xview4/predict.json")
-        # coco_eval = COCOeval(coco, coco_predicts, "bbox")
-        # coco_eval.params.useCats = True
-        # coco_eval.evaluate()
-        # coco_eval.accumulate()
-        # coco_eval.summarize()
+        log_dict_val = trainer.test(loaders["test"], verbose=1)
+        coco = loaders["test"].dataset.coco()
+        json.dump(log_dict_val, open(opt.save_dir + "/predict.json", "w"))
+        coco_predicts = coco.loadRes(opt.save_dir + "/predict.json")
+        coco_bp = coco.loadRes("/home/nick/PycharmProjects/airbus/exp/dla_34_xview4/predict.json")
+        coco_eval = COCOeval(coco, coco_predicts, "bbox")
+        coco_eval.params.useCats = True
+        coco_eval.evaluate()
+        coco_eval.accumulate()
+        coco_eval.summarize()
         log_dict_val = trainer.visualize(loaders["test"])
     else:
         if lr_schedule:
@@ -116,17 +103,17 @@ if __name__ == '__main__':
         for epoch in range(start_epoch + 1, opt.num_epochs + 1):
             log_dict_val, log_dict_test = None, None
             log_dict_train = trainer.train(epoch, loaders["train"])
-            # writer.add_scalars("train", log_dict_train, 1)
+            writer.add_scalars("train", log_dict_train, 1)
             save_model(os.path.join(opt.save_dir, 'model_last.pth'),
                        epoch, model, -1, optimizer)
             if "val" in loaders and opt.val_intervals > 0 and not(epoch % opt.val_intervals):
                 with torch.no_grad():
                     log_dict_val = trainer.val(epoch, loaders["val"])
-                # writer.add_scalars("val", log_dict_val, opt.val_intervals)
+                writer.add_scalars("val", log_dict_val, opt.val_intervals)
 
             if "test" in loaders and opt.test_intervals > 0 and not(epoch % opt.test_intervals):
                 log_dict_test = trainer.test(loaders["test"])
-                # writer.add_scalars("test", log_dict_test, opt.test_intervals)
+                writer.add_scalars("test", log_dict_test, opt.test_intervals)
 
             need_save, timespamp = history.step(epoch, log_dict_train, log_dict_val, log_dict_test)
             if need_save:
@@ -136,4 +123,4 @@ if __name__ == '__main__':
             if lr_schedule:
                 lr_schedule.step()
                 print([group_param["lr"] for group_param in optimizer.param_groups])
-        # writer.close()
+        writer.close()

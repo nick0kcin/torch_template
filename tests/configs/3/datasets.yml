@@ -1,0 +1,50 @@
+train:
+    sampler:
+        class: BalanceClassSampler
+        kwargs:
+            labels: dataset.label
+            mode: downsampling
+    dataset:
+        class: AME
+        kwargs:
+            path: /media/nick/57E900E38EEA892E11/dataset_flatten/
+            label_path: /media/nick/57E900E38EEA892E11/dataset_flatten/dataset_augfolds.csv
+    dataloader:
+        class: DataLoader
+        kwargs:
+            batch_size: 2
+            num_workers: 2
+            pin_memory: True
+            drop_last: True
+val:
+    dataset:
+        class: AME
+        kwargs:
+            path: /media/nick/57E900E38EEA892E11/dataset_flatten/
+            label_path: /media/nick/57E900E38EEA892E11/dataset_flatten/dataset_augfolds.csv
+            split: val
+    dataloader:
+        class: DataLoader
+        kwargs:
+            batch_size: 8
+            num_workers: 1
+            shuffle: False
+            pin_memory: True
+            drop_last: False
+
+predict:
+    dataset:
+        class: AME
+        kwargs:
+            path: /media/nick/57E900E38EEA892E11/dataset_flatten/
+            label_path: /media/nick/57E900E38EEA892E11/dataset_flatten/dataset_augfolds.csv
+            tta: 5
+            split: test
+    dataloader:
+        class: DataLoader
+        kwargs:
+            batch_size:  1
+            num_workers: 1
+            shuffle: False
+            pin_memory: True
+            drop_last: False

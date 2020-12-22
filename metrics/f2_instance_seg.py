@@ -1,5 +1,4 @@
 import numpy as np
-import torch
 
 
 def iou(gt, pred):
@@ -30,6 +29,4 @@ def f2(gt, pred, thresholds=tuple(np.arange(0.5, 1, 0.05))):
         fp = pred.shape[0] - tp
         f2_total += (5. * tp) / (5. * tp + 4 * fn + fp)
 
-    # if f2_total:
-    #     print(f2_total, pred.sum())
     return f2_total / len(thresholds)

@@ -1,9 +1,5 @@
-
 from torch.nn import Module
-from torch.nn.functional import  max_pool2d
-import torch
-from torch.nn.functional import normalize, tanh, cross_entropy, l1_loss, log_softmax, binary_cross_entropy_with_logits, relu
-
+from torch.nn.functional import relu
 
 
 class Hinge(Module):

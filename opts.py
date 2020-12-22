@@ -28,7 +28,7 @@ class opts(object):
         self.parser.add_argument('--print_iter', type=int, default=0,
                                  help='disable progress bar and print to screen.')
 
-        self.parser.add_argument('--num_epochs', type=int, default=20,
+        self.parser.add_argument('--num_epochs', type=int, default=100,
                                  help='total training epochs.')
 
         self.parser.add_argument('--predict', action='store_true',

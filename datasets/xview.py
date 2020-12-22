@@ -1,18 +1,14 @@
-import numpy as np
-import pandas as pd
-from torch.utils.data import Dataset
-import os
-import cv2
-import itertools
-from collections import Counter
-from albumentations import *
-from image_utils import *
-from collections import namedtuple
 import json
+import os
+from collections import Counter
+from collections import namedtuple
+from shutil import copy2
+
 from pycocotools.coco import COCO
 from sklearn.cluster import KMeans
-from shutil import copy2
-import time
+from torch.utils.data import Dataset
+
+from image_utils import *
 
 
 class Xview(Dataset):
@@ -23,22 +19,14 @@ class Xview(Dataset):
         self.gen_labels(label_path, classes_file)
         self.down_ratio = 4
         self.data_cols = {"pos": 2, "wh": 2, "bias": 2, "cat": 1}
-        # weights = {key: (max(self.classes_dict.values()) / val) ** 2 for key, val in self.classes_dict.items()}
-        # self.sample_weights = np.array([sum([val * weights[key] for key,val in counter.items()]) +1e-07
-        #                        for counter in self.sample_labels])
-        # self.sample_weights /= sum(self.sample_weights)
-        # # self.exp = {cls: sum([ v * self.sample_labels[i][cls] for i, v in enumerate(self.sample_weights)]) for cls in self.classes_dict}
-        # self.class_idx = {cls: i for i, cls in enumerate(sorted(self.classes_dict.keys() - {"bomb-goal"}))}
-        # self.length = 2 * len(self.images)
         self.max_objects = max([len(v[1]) for v in self.images])
         self.transforms = transform
-        # self.crop_size = (512, 512)
         self.crop = crop
         self.Coco = None
 
     def coco(self, super_class=False):
         if not self.Coco:
-            images = [{"file_name":  row[0], "id": i} for i, row in enumerate(self.images)]
+            images = [{"file_name": row[0], "id": i} for i, row in enumerate(self.images)]
             categories = [{"id": value, "name": key} for key, value in self.super_cat_idx.items()]
             annotations = []
             anno_id = 0
@@ -63,7 +51,7 @@ class Xview(Dataset):
     def txt_file(self, name):
         with open(name, "w") as f:
             for i, row in enumerate(self.images):
-                f.write(f"{name.split('.')[0]}_cut/" +row[0] + " ")
+                f.write(f"{name.split('.')[0]}_cut/" + row[0] + " ")
                 for rect in row[1]:
                     bbox = rect["bbox"]
                     category_id = self.super_cat_idx[rect["super_label"]]
@@ -71,22 +59,24 @@ class Xview(Dataset):
                 f.write("\n")
 
     def txt_files(self, name):
-        shape = cv2.imread(os.path.join(self.path,  self.images[0][0])).shape
+        shape = cv2.imread(os.path.join(self.path, self.images[0][0])).shape
         for i, row in enumerate(self.images):
             try:
                 from shutil import copy2
-                copy2(os.path.join(self.path,  row[0]), os.path.join(self.path,  row[0]).replace("/images", "/imgs"))
-                os.remove(os.path.join(self.path,  row[0]).replace(".tif", "_0.tif"))
+                copy2(os.path.join(self.path, row[0]), os.path.join(self.path, row[0]).replace("/images", "/imgs"))
+                os.remove(os.path.join(self.path, row[0]).replace(".tif", "_0.tif"))
             except FileNotFoundError:
                 pass
             if True:
-                with open(os.path.join(self.path,  row[0].replace(".tif", ".txt")).replace("images/", "labels/"), "w") as f:
+                with open(os.path.join(self.path, row[0].replace(".tif", ".txt")).replace("images/", "labels/"),
+                          "w") as f:
                     for rect in row[1]:
                         bbox = rect["bbox"]
                         category_id = self.super_cat_idx[rect["super_label"]]
                         bbox = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2,
                                 (bbox[2] - bbox[0]), (bbox[3] - bbox[1])]
-                        f.write(f"{category_id} {bbox[0] / shape[0]} {bbox[1]/ shape[1]} {bbox[2] / shape[0]} {bbox[3] / shape[1]}\n")
+                        f.write(
+                            f"{category_id} {bbox[0] / shape[0]} {bbox[1] / shape[1]} {bbox[2] / shape[0]} {bbox[3] / shape[1]}\n")
             else:
                 print("empty image")
 
@@ -98,8 +88,6 @@ class Xview(Dataset):
                 rects.append((bbox[2] - bbox[0], bbox[3] - bbox[1]))
         clusters = KMeans(n_clusters=9).fit(rects)
         print(clusters.cluster_centers_)
-
-
 
     def gen_labels(self, label_path, classes_file, mapping=True):
         # self.objects = []
@@ -143,39 +131,31 @@ class Xview(Dataset):
                     "super_label": super_label,
                     "strip": img_data["cat_id"]
                 }
-                                    # })
-                self.images.update({img_data["image_id"]:
-                                    self.images.get(img_data["image_id"], []) + [patch]})
-                self.raw_labels.update({img_data["image_id"]:
-                                        self.raw_labels.get(img_data["image_id"], []) + [img_data]})
-                # self.labels.update({label})
-                # self.super_labels.update({super_label})
-                # self.strips.update({img_data["cat_id"]})
-                # self.strip_dict.update({
-                #     img_data["image_id"]: self.strip_dict.get(img_data["image_id"], set()) | {img_data["cat_id"]}})
-                # self.strip_counters.update({
-                #     img_data["cat_id"]: self.strip_counters.get(img_data["cat_id"], Counter()) + Counter({label})
                 # })
+                self.images.update({img_data["image_id"]:
+                                        self.images.get(img_data["image_id"], []) + [patch]})
+                self.raw_labels.update({img_data["image_id"]:
+                                            self.raw_labels.get(img_data["image_id"], []) + [img_data]})
+
         self.images = list(self.images.items())
         self.raw_labels = list(self.raw_labels.items())
-        # val_counter = Counter()
-        # val_strips = set()
-        # for strip, counter in sorted(self.strip_counters.items(), key=lambda x: sum(x[1].values()), reverse=True):
-        #     dot = sum([(val > 6) for key, val in counter.items() if key not in val_counter or val_counter[key] < 6])
-        #     # dot = len(counter.keys() - val_counter.keys())
-        #     if np.random.rand() > 0.95 or dot > 0:
-        #         val_counter += counter
-        #         val_strips.update({strip})
-        # val_images = [img for img, strip in self.strip_dict.items() if (val_strips & strip)]
-        # val_objects = [obj for obj in data["features"] if obj["properties"]["cat_id"] in val_strips]
-        # val_geo = {"features": val_objects}
-        # with open(label_path.replace("train", "val"), "w") as f:
-        #     f.write(json.dumps(val_geo))
-        # for img in val_images:
-        #     copy2(os.path.join(self.path, img),
-        #           os.path.join(self.path.replace("train", "val"), img))
+        val_counter = Counter()
+        val_strips = set()
+        for strip, counter in sorted(self.strip_counters.items(), key=lambda x: sum(x[1].values()), reverse=True):
+            dot = sum([(val > 6) for key, val in counter.items() if key not in val_counter or val_counter[key] < 6])
+            # dot = len(counter.keys() - val_counter.keys())
+            if np.random.rand() > 0.95 or dot > 0:
+                val_counter += counter
+                val_strips.update({strip})
+        val_images = [img for img, strip in self.strip_dict.items() if (val_strips & strip)]
+        val_objects = [obj for obj in data["features"] if obj["properties"]["cat_id"] in val_strips]
+        val_geo = {"features": val_objects}
+        with open(label_path.replace("train", "val"), "w") as f:
+            f.write(json.dumps(val_geo))
+        for img in val_images:
+            copy2(os.path.join(self.path, img),
+                  os.path.join(self.path.replace("train", "val"), img))
         print("done")
-
 
     def cut_big_image(self, img, objects, name, size=1024, stride=0.7):
         last = None
@@ -186,8 +166,8 @@ class Xview(Dataset):
             x, y = min(sx, img.shape[1]), min(sy, img.shape[0])
             nx, ny = max(x - size, 0), max(y - size, 0)
             if last is None:
-                last = np.array([x,y,nx,ny])
-            elif np.abs(np.array([x,y,nx,ny]) - last).mean() < 20:
+                last = np.array([x, y, nx, ny])
+            elif np.abs(np.array([x, y, nx, ny]) - last).mean() < 20:
                 last = np.array([x, y, nx, ny])
                 continue
             last = np.array([x, y, nx, ny])
@@ -196,10 +176,10 @@ class Xview(Dataset):
             crop_rect = [nx, ny, x, y]
             good_objects = filter(
                 lambda it: area(intersection(list(map(int, it["bounds_imcoords"].split(","))),
-                                            crop_rect)) > 0.5 * area(
+                                             crop_rect)) > 0.5 * area(
                     list(map(int, it["bounds_imcoords"].split(",")))) > 0,
                 objects)
-            obj = [{ "properties":
+            obj = [{"properties":
                 {
                     "image_id": it["image_id"].replace(".tif", f"_{i}.tif"),
                     "cat_id": it["cat_id"],
@@ -208,8 +188,8 @@ class Xview(Dataset):
                         map(str, move(
                             intersection(list(map(int, it["bounds_imcoords"].split(","))), crop_rect),
                             vertex, crop.shape)))
-                    }
-            }for it in good_objects]
+                }
+            } for it in good_objects]
             new_labels.extend(obj)
             assert crop.shape == (min(img.shape[0], size), min(img.shape[1], size), 3)
             cv2.imwrite(name.replace("images", "cut").replace(".tif", f"_{i}.tif"), crop)
@@ -228,42 +208,6 @@ class Xview(Dataset):
 
     def __len__(self):
         return len(self.images)
-
-    # def crop_image(self, img, objects):
-    #     centroids = []
-    #     if self.transforms:
-    #         transformed = self.transforms(image=img, points=objects)
-    #         if "points" in transformed and transformed["points"] is not None:
-    #             for points in transformed["points"]:
-    #                 centroids.append(points.mean(axis=0))
-    #             objects = [obj for i, obj in enumerate(objects)
-    #                        if centroids[i][0] < img.shape[1] and centroids[i][1] < img.shape[0]]
-    #             centroids = [centroid for centroid in centroids
-    #                          if centroid[0] < img.shape[1] and centroid[1] < img.shape[0]]
-    #         img = transformed["image"]
-    #     else:
-    #         for obj in objects:
-    #             centroids.append(obj.mean(axis=0))
-    #     if not self.crop:
-    #         return img, objects
-    #     nd_crop = np.array(self.crop_size)
-    #     nd_size = np.array(img.shape[1::-1])
-    #     choise = None
-    #     if np.random.rand() > 0.3 and objects:
-    #         choise = np.random.randint(0, len(objects) - 1) if len(objects) > 1 else 0
-    #         center = np.clip(np.random.normal(
-    #         centroids[choise], nd_crop / 28), nd_crop / 2, nd_size - nd_crop / 2 - 1)
-    #     else:
-    #         center = np.clip(np.random.normal(nd_size / 2, nd_size / 4), nd_crop / 2, nd_size - nd_crop / 2 - 1)
-    #     center = center.astype(np.uint32)
-    #     img = img[center[1] - self.crop_size[1] // 2: center[1] + self.crop_size[1] // 2,
-    #           center[0] - self.crop_size[0] // 2: center[0] + self.crop_size[0] // 2, :].copy()
-    #     nobjects = [np.clip(obj, [center[0] - self.crop_size[0] // 2, center[1] - self.crop_size[1] // 2],
-    #           [center[0] + self.crop_size[0] // 2, center[1] + self.crop_size[1] // 2]) for obj in objects]
-    #     # assert (not choise) or cv2.contourArea(nobjects[choise].astype(np.float32)[:, None, :]) > 5,
-    #     # (center, centroids[choise]) if choise else None
-    #     nobjects = [obj for obj in nobjects if cv2.contourArea(np.float32(obj)[:, None, :]) > 5]
-    #     return img, nobjects
 
     @staticmethod
     def visualize(img, objects, name="img"):
@@ -287,7 +231,8 @@ class Xview(Dataset):
     def debug_big(self, cat_id):
         searched = filter(lambda x: x["label"] == self.labels_map[cat_id], self.objects)
         s = list(searched)
-        sizes = [np.clip(np.sqrt((x["bbox"][2] - x["bbox"][0]) ** 2 + (x["bbox"][3] - x["bbox"][1])**2),0, 200) for x in s]
+        sizes = [np.clip(np.sqrt((x["bbox"][2] - x["bbox"][0]) ** 2 + (x["bbox"][3] - x["bbox"][1]) ** 2), 0, 200) for x
+                 in s]
         print(np.mean(sizes), 3 * np.std(sizes))
         _, kmeans, _ = cv2.kmeans(np.array([sizes]).transpose(1, 0).astype(np.float32),
                                   2, None,
@@ -326,22 +271,10 @@ class Xview(Dataset):
                        np.clip(c[0] + 512, 0, img.shape[1])].copy()
                 cv2.imshow("img2", crop)
             cv2.waitKey()
-        # for el in searched:
-        #     print(el)
-        #     full_name = os.path.join(self.path, el["image"])
-        #     img = cv2.imread(full_name)
-        #     bbox = el["bbox"]
-        #     cv2.rectangle(img, tuple(bbox[:2]), tuple(bbox[2:]), (0, 0, 255), 2)
-        #     c = (bbox[0] + bbox[2]) // 2, (bbox[1] + bbox[3]) // 2
-        #     crop = img[np.clip(c[1] - 512, 0, img.shape[0]):
-        #                np.clip(c[1] + 512, 0, img.shape[0]),
-        #            np.clip(c[0] - 512, 0, img.shape[1]):
-        #            np.clip(c[0] + 512, 0, img.shape[1])].copy()
-        #     cv2.imshow("img", crop)
-        #     cv2.waitKey()
 
     def get_masks(self, objects, labels, img_size):
-        center_mask = np.zeros((len(self.super_cat_idx), img_size[0] // self.down_ratio, img_size[1] // self.down_ratio))
+        center_mask = np.zeros(
+            (len(self.super_cat_idx), img_size[0] // self.down_ratio, img_size[1] // self.down_ratio))
         data_type = namedtuple("dims", self.data_cols.keys())
         dims = {value: [] for value in self.data_cols}
         assert len(objects) == len(labels)
@@ -380,7 +313,7 @@ class Xview(Dataset):
         return center_mask, dims
 
     def __getitem__(self, item):
-        full_name = os.path.join(self.path,  self.images[item][0])
+        full_name = os.path.join(self.path, self.images[item][0])
         # print(full_name)
         img = cv2.imread(full_name)
         objects = self.images[item][1]
@@ -398,10 +331,10 @@ class Xview(Dataset):
         ret = {
             "input": img_.transpose(2, 0, 1).astype(np.float32),
             "center": center_mask.astype(np.float32),
-            "meta" : item,
+            "meta": item,
             "meta_name": full_name
             # "meta": [el for el in self.Coco.anns.values() if el["image_id"] == item]
-               }
+        }
         for key, val in dimension_data.items():
             dimension_data[key] = np.row_stack(
                 (np.array(val, dtype=np.int64 if key in {"pos", "cat"} else np.float32),
@@ -411,9 +344,4 @@ class Xview(Dataset):
                                           self.data_cols[key]), dtype=np.int64 if key in {"pos", "cat"} else np.float32)
         ret.update(dimension_data)
 
-        # self.visualize(img, objects)
-        # self.visualize_boxes(center_mask[0, :, :], [], "boes")
-        # self.visualize_boxes(cv2.resize((center_mask.max(axis=0)*255).astype(np.uint8), img_.shape[:2]), [], "boxes")
-        # self.visualize_boxes(img_, bboxes, "rawxes")
         return ret
-        # return item

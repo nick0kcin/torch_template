@@ -1,7 +1,5 @@
 from torch.nn import Module
-from torch.nn.functional import  max_pool2d
-import torch
-from torch.nn.functional import normalize, tanh, cross_entropy, l1_loss, log_softmax
+from torch.nn.functional import cross_entropy
 
 
 def identity(x):
@@ -23,5 +21,4 @@ class CatLoss(Module):
             loss_value = cross_entropy(predicted, gt_[:, 0])
         else:
             loss_value = objects.sum().float()
-            # loss_value =  predict.abs().mean()
         return loss_value

@@ -1,0 +1,22 @@
+-
+    class: StepLR
+    start: 0
+    kwargs:
+        step_size: 1
+        gamma: 1.2
+    lr: 0.000003
+-
+    class: MultiStepLR
+    start: 2
+    kwargs:
+        milestones:
+            - 3
+            - 5
+        gamma: 0.75
+    lr: 0.000265
+-
+    class: ExponentialLR
+    start: 8
+    kwargs:
+        gamma: 0.8
+    lr: 0.0009

@@ -1,9 +1,11 @@
-import yaml
 import time
-import os
+
+import numpy as np
+import yaml
+
 
 class History:
-    def __init__(self, path, resume, eps=1e-04):
+    def __init__(self, path, resume):
         self.path = path + "/"
         self.log_file = path + "/" + "log.txt"
         if not resume:
@@ -13,8 +15,6 @@ class History:
                 raise ValueError("log already exist")
             except FileNotFoundError:
                 pass
-            # f = open(self.log_file, "w")
-            # f.close()
             self.history = {}
         else:
             self.history = {}
@@ -25,16 +25,15 @@ class History:
             self.best = min([(item["val"]["loss"], timestamp) for timestamp, item in self.history.items()])
             self._epoch = self.history[self.best[1]]
         else:
-            self.best = 0, None
+            self.best = 10000, None
             self._epoch = 0
-        self.eps = eps
 
     @property
     def epoch(self):
         return next(reversed(self.history.values()))["epoch"] if self.history else 0
 
     def reset(self):
-        self.best =0, None
+        self.best = float("inf"), None
         self._epoch = 0
 
     def step(self, epoch, train_info, val_info=None, test_info=None):
@@ -47,22 +46,16 @@ class History:
         stamp = timestamp
         self.history.update({timestamp: epoch_info})
         is_save = False
-        if test_info and test_info > self.best[0]:
+        if val_info and val_info["loss"] < self.best[0]:
             is_save = True
-            try:
-                os.rename(self.path + "model_best.pth", self.path + str(timestamp) + ".pth")
-            except FileNotFoundError:
-                pass
-            self.best = test_info, timestamp
+            self.best = val_info["loss"], timestamp
             timestamp = "model_best"
-        # elif val_info and val_info["loss"] - self.best[0] < self.eps:
-        #     is_save = True
 
         for type, info in epoch_info.items():
             if isinstance(info, dict):
                 for key, loss in info.items():
                     if key != "loss":
-                        epoch_info[type][key] = float("{0:.3f}".format(loss))
+                        epoch_info[type][key] = np.round(loss, decimals=3).tolist()
                     else:
                         epoch_info[type][key] = float("{0:.8f}".format(loss))
 

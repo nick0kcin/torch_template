@@ -1,6 +1,5 @@
 from torch.nn import Module
 from torch.nn.functional import l1_loss
-import  torch
 
 
 class L1Loss(Module):

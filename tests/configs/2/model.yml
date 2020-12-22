@@ -1,0 +1,6 @@
+Unet:
+   encoder_name: efficientnet-b5
+   encoder_weights: imagenet
+   classes: 7
+   decoder_attention_type: scse
+   
