@@ -7,7 +7,6 @@ except ImportError:
 
 import torch.nn as nn
 import torch
-from .DCNv2.dcn_v2 import DCN
 
 __all__ = ['MobileNetV2', 'mobilenet_v2']
 

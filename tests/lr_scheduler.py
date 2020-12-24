@@ -1,5 +1,5 @@
 import unittest
-from trainingmanager import TrainingManager
+from manager import TrainingManager
 from torch.optim import Adam
 from torch.autograd import Variable
 import torch

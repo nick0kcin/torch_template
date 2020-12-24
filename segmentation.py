@@ -8,7 +8,7 @@ from history import History
 from models import load_model, save_model
 from opts import opts
 from trainers.segmentation_trainer import SegmentationTrainer  as Trainer
-from trainingmanager import TrainingManager
+from manager import TrainingManager
 
 if __name__ == '__main__':
     opt = opts().parse()

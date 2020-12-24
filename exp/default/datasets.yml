@@ -1,0 +1,46 @@
+train:
+    dataset:
+        class: Xview
+        kwargs:
+            path: /media/nick/DATA/ame_predicts/xview/images/train_cut
+            label_path: /media/nick/DATA/ame_predicts/xview/xViewCut_train.geojson
+            classes_file: /media/nick/57E900E38EEA892E11/xview/classes.txt
+    dataloader:
+        class: DataLoader
+        kwargs:
+            batch_size: 6
+            num_workers: 4
+            pin_memory: True
+            shuffle: True
+            drop_last: False
+val:
+    dataset:
+        class: Xview
+        kwargs:
+            path: /media/nick/DATA/ame_predicts/xview/images/val_cut
+            label_path: /media/nick/DATA/ame_predicts/xview/xViewCut_val.geojson
+            classes_file: /media/nick/57E900E38EEA892E11/xview/classes.txt
+    dataloader:
+        class: DataLoader
+        kwargs:
+            batch_size:  3
+            num_workers: 3
+            shuffle: False
+            pin_memory: True
+            drop_last: False
+
+test:
+    dataset:
+        class: Xview
+        kwargs:
+            path: /media/nick/DATA/ame_predicts/xview/images/val_cut
+            label_path: /media/nick/DATA/ame_predicts/xview/xViewCut_val.geojson
+            classes_file: /media/nick/57E900E38EEA892E11/xview/classes.txt
+    dataloader:
+        class: DataLoader
+        kwargs:
+            batch_size:  1
+            num_workers: 1
+            shuffle: False
+            pin_memory: True
+            drop_last: True

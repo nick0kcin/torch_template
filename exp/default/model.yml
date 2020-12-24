@@ -1,0 +1,8 @@
+PoseResNet:
+    # num_layers: 18
+    heads:
+        center: 9
+        wh: 2
+        cat: 9
+        bias: 2
+    head_conv: 256

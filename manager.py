@@ -1,5 +1,6 @@
 import yaml
 from albumentations.core.serialization import from_dict
+
 from collators import get_collator
 from datasets import create_dataset, create_dataloader, create_sampler
 from losses import create_loss
@@ -138,34 +139,34 @@ class TrainingManager:
                            "weight_decay": get_decay(i)
                            if not name.endswith("bias") and param.requires_grad else 0.0,
                            "lr": i}
-                          for i, params in enumerate(parameters) for name, param in params["params"].items()
+                          for i, params in enumerate(parameters) for name, param in params["params"]
                           ]
         else:
             parameters = [{"params": param,
                            "lr": i}
-                          for i, params in enumerate(parameters) for name, param in params["params"].items()]
+                          for i, params in enumerate(parameters) for name, param in params["params"]]
         return create_optimizer(model_name, parameters, **kwargs)
 
     def trainer_params(self):
         return self.trainer
 
-    def dataloaders(self, transforms=None, folds=None):
+    def dataloaders(self, **kwargs):
         dataloaders = {}
         for type, data in self.datasets.items():
             if "dataset" not in data or "dataloader" not in data:
                 raise ValueError("dataset info missing for {%type}")
-            if "transform" in data:
-                transform = from_dict(data["transform"])
+            dataset_args = {}
+            if "transforms" in data:
+                dataset_args.update({"transforms": from_dict(data["transform"])})
             else:
-                transform = transforms[type] if type in transforms else None
-            if folds and type in folds:
-                fold = folds[type]
+                dataset_args.update({"transforms": kwargs["transforms"][type] if "transforms" in kwargs and type in kwargs[
+                    "transforms"] else None})
+            if "folds" in kwargs and type in kwargs["folds"]:
+                dataset_args.update({"fold": kwargs["folds"][type]})
             elif "folds" in data:
-                fold = data["folds"]
-            else:
-                fold = None
+                dataset_args.update({"fold": data["folds"]})
 
-            dataset = create_dataset(data["dataset"]["class"], transform, folds=fold,
+            dataset = create_dataset(data["dataset"]["class"], **dataset_args,
                                      **data["dataset"].get("kwargs", {}))
             if "sampler" in data:
                 sampler = create_sampler(data["sampler"]["class"], dataset, data["sampler"].get("kwargs", {}))

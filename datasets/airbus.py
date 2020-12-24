@@ -14,7 +14,7 @@ from image_utils import rle_decode, draw_gaussian
 
 class AirBusDataset(Dataset):
 
-    def __init__(self, path, augment=False, crop_size=256, transform=None, segmentation=False, angle_encoding="sin"):
+    def __init__(self, path, augment=False, crop_size=256, transforms=None, segmentation=False, angle_encoding="sin"):
         self.data = pd.read_csv(path)
         self.images = list(set(self.data.iloc[:, 0]))
         self.sizes = self.data.dropna()['ImageId'].dropna().value_counts()
@@ -31,7 +31,7 @@ class AirBusDataset(Dataset):
         self.stat = [0, 0]
         self.stat_s = []
         self.down_ratio = 2
-        self.transforms = transform
+        self.transforms = transforms
         self.data_cols = {"pos": 2, "wh": 2, "bias": 2, "angle": 2 if angle_encoding == "sin" else 1}
         self.segmentation = segmentation
         self.angle_encoding = angle_encoding

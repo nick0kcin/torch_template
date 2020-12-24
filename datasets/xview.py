@@ -12,7 +12,7 @@ from image_utils import *
 
 
 class Xview(Dataset):
-    def __init__(self, path, label_path, classes_file, crop=True, transform=None):
+    def __init__(self, path, label_path, classes_file, crop=True, transforms=None):
         cv2.startWindowThread()
         self.path = path
         self.label_path = label_path
@@ -20,7 +20,7 @@ class Xview(Dataset):
         self.down_ratio = 4
         self.data_cols = {"pos": 2, "wh": 2, "bias": 2, "cat": 1}
         self.max_objects = max([len(v[1]) for v in self.images])
-        self.transforms = transform
+        self.transforms = transforms
         self.crop = crop
         self.Coco = None
 
@@ -139,23 +139,6 @@ class Xview(Dataset):
 
         self.images = list(self.images.items())
         self.raw_labels = list(self.raw_labels.items())
-        val_counter = Counter()
-        val_strips = set()
-        for strip, counter in sorted(self.strip_counters.items(), key=lambda x: sum(x[1].values()), reverse=True):
-            dot = sum([(val > 6) for key, val in counter.items() if key not in val_counter or val_counter[key] < 6])
-            # dot = len(counter.keys() - val_counter.keys())
-            if np.random.rand() > 0.95 or dot > 0:
-                val_counter += counter
-                val_strips.update({strip})
-        val_images = [img for img, strip in self.strip_dict.items() if (val_strips & strip)]
-        val_objects = [obj for obj in data["features"] if obj["properties"]["cat_id"] in val_strips]
-        val_geo = {"features": val_objects}
-        with open(label_path.replace("train", "val"), "w") as f:
-            f.write(json.dumps(val_geo))
-        for img in val_images:
-            copy2(os.path.join(self.path, img),
-                  os.path.join(self.path.replace("train", "val"), img))
-        print("done")
 
     def cut_big_image(self, img, objects, name, size=1024, stride=0.7):
         last = None

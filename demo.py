@@ -11,7 +11,7 @@ from history import History
 from models import load_model
 from opts import opts
 from trainers.obj_det_kp_trainer import ObjDetKPTrainer as Trainer
-from trainingmanager import TrainingManager
+from manager import TrainingManager
 
 if __name__ == '__main__':
     opt = opts().parse()

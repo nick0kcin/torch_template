@@ -10,7 +10,7 @@ from history import History
 from models.__init__ import load_model, save_model
 from opts import opts
 from trainers.classify_trainer import ClassifyTrainer as Trainer
-from trainingmanager import TrainingManager
+from manager import TrainingManager
 from transforms.random_lines import random_microscope, AdvancedHairAugmentation
 
 if __name__ == '__main__':

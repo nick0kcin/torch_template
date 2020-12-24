@@ -10,7 +10,7 @@ from image_utils import get_masks_from_polygon, draw_gaussian, zipped_masks_to_r
 
 
 class Dota(Dataset):
-    def __init__(self, path, label_path, crop=True, transform=None):
+    def __init__(self, path, label_path, crop=True, transforms=None):
         cv2.startWindowThread()
         self.path = path
         self.label_path = label_path
@@ -33,7 +33,7 @@ class Dota(Dataset):
         self.class_idx = {cls: i for i, cls in enumerate(sorted(self.classes_dict.keys() - {"bomb-goal"}))}
         self.length = 2 * len(self.images)
         self.max_objects = max(self.num_objects)
-        self.transforms = transform
+        self.transforms = transforms
         # self.crop_size = (512, 512)
         self.crop = crop
 

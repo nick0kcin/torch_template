@@ -1,5 +1,5 @@
 import unittest
-from trainingmanager import TrainingManager
+from manager import TrainingManager
 
 
 class MyTestCase(unittest.TestCase):

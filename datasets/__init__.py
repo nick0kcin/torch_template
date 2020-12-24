@@ -7,8 +7,8 @@ from utils import create_instance, import_all_from_directory
 import_all_from_directory(__name__)
 
 
-def create_dataset(name, transform=None, **kwargs):
-    return create_instance(name, globals(), transform=transform, **kwargs)
+def create_dataset(name, **kwargs):
+    return create_instance(name, globals(), **kwargs)
 
 
 def create_dataloader(name, dataset, sampler=None,  collate=None, **kwargs):

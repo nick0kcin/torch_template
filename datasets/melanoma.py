@@ -5,11 +5,11 @@ import numpy as np
 
 
 class Melanoma3(Dataset):
-    def __init__(self, data, more_pos=None, folds=None, tta=False, folder="train", transform=None):
+    def __init__(self, data, more_pos=None, folds=None, tta=False, folder="train", transforms=None):
 
         self.prefix = "/".join(data.split("/")[:-1])
         self.data = pd.read_csv(data)
-        self.transform = transform
+        self.transform = transforms
         self.tta = tta
         self.folder = folder
         if "tfrecord" in self.data.keys():

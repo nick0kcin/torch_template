@@ -5,7 +5,7 @@ from opts import opts
 from models.__init__ import  load_model, save_model
 from trainers.obj_det_kp_trainer import ObjDetKPTrainer as Trainer
 from history import History
-from trainingmanager import TrainingManager
+from manager import TrainingManager
 from torch.utils.tensorboard import SummaryWriter
 from albumentations import *
 import cv2
@@ -34,9 +34,9 @@ if __name__ == '__main__':
             RandomCrop(512, 512, always_apply=True),
             Flip(),
             Transpose(),
-            ElasticTransform(alpha=250, sigma=30, p=0.2, border_mode=cv2.BORDER_CONSTANT),
+            # ElasticTransform(alpha=250, sigma=30, p=0.2, border_mode=cv2.BORDER_CONSTANT),
             ImageCompression(quality_lower=80, always_apply=True),
-            CoarseDropout(max_holes=40, min_holes=6),
+            # CoarseDropout(max_holes=40, min_holes=6),
             ToGray(),
             OneOf([
                 CLAHE(),
@@ -62,12 +62,9 @@ if __name__ == '__main__':
     os.environ['CUDA_VISIBLE_DEVICES'] = opt.gpus_str
     opt.device = device('cuda' if opt.gpus[0] >= 0 else 'cpu')
     loaders = logger.dataloaders(transforms=transforms)
-    loaders["train"].dataset.compute_anchors()
-    loaders["train"].dataset.txt_files("train")
-    loaders["val"].dataset.txt_files("val")
-    losses, loss_weights = logger.loss
-    model = logger.model
-    teacher = logger.teacher
+    losses, loss_weights = logger.loss()
+    model = logger.model()
+    teacher = logger.teacher()
     params = logger.parameters(model)
     optimizer = logger.optimizer(params)
     lr_schedule = logger.lr_scheduler(optimizer)
@@ -79,48 +76,36 @@ if __name__ == '__main__':
     metrics = logger.metric
     trainer = Trainer(model, losses, loss_weights,  metrics=metrics, teacher=teacher, optimizer=optimizer, device=opt.device,
                       print_iter=opt.print_iter, num_iter=opt.num_iters, batches_per_update=opt.batches_per_update,
-                      **logger.trainer_params)
+                      **logger.trainer_params())
     trainer.set_device(opt.gpus, opt.device)
     coco = loaders["test"].dataset.coco()
 
-    if opt.test:
-        log_dict_val = trainer.test(loaders["test"], verbose=1)
-        coco = loaders["test"].dataset.coco()
-        json.dump(log_dict_val, open(opt.save_dir + "/predict.json", "w"))
-        coco_predicts = coco.loadRes(opt.save_dir + "/predict.json")
-        coco_bp = coco.loadRes("/home/nick/PycharmProjects/airbus/exp/dla_34_xview4/predict.json")
-        coco_eval = COCOeval(coco, coco_predicts, "bbox")
-        coco_eval.params.useCats = True
-        coco_eval.evaluate()
-        coco_eval.accumulate()
-        coco_eval.summarize()
-        log_dict_val = trainer.visualize(loaders["test"])
-    else:
+  
+    if lr_schedule:
+        for i in range(start_epoch):
+            lr_schedule.step()
+        print([group_param["lr"] for group_param in optimizer.param_groups])
+    for epoch in range(start_epoch + 1, opt.num_epochs + 1):
+        log_dict_val, log_dict_test = None, None
+        log_dict_train = trainer.train(epoch, loaders["train"])
+        writer.add_scalars("train", log_dict_train, 1)
+        save_model(os.path.join(opt.save_dir, 'model_last.pth'),
+                   epoch, model, -1, optimizer)
+        if "val" in loaders and opt.val_intervals > 0 and not(epoch % opt.val_intervals):
+            with torch.no_grad():
+                log_dict_val = trainer.val(epoch, loaders["val"])
+            writer.add_scalars("val", log_dict_val, opt.val_intervals)
+
+        if "test" in loaders and opt.test_intervals > 0 and not(epoch % opt.test_intervals):
+            log_dict_test = trainer.test(loaders["test"])
+            writer.add_scalars("test", log_dict_test, opt.test_intervals)
+
+        need_save, timespamp = history.step(epoch, log_dict_train, log_dict_val, log_dict_test)
+        if need_save:
+            save_model(os.path.join(opt.save_dir, str(timespamp) + '.pth'),
+                       epoch, model, log_dict_train["loss"], optimizer)
+
         if lr_schedule:
-            for i in range(start_epoch):
-                lr_schedule.step()
+            lr_schedule.step()
             print([group_param["lr"] for group_param in optimizer.param_groups])
-        for epoch in range(start_epoch + 1, opt.num_epochs + 1):
-            log_dict_val, log_dict_test = None, None
-            log_dict_train = trainer.train(epoch, loaders["train"])
-            writer.add_scalars("train", log_dict_train, 1)
-            save_model(os.path.join(opt.save_dir, 'model_last.pth'),
-                       epoch, model, -1, optimizer)
-            if "val" in loaders and opt.val_intervals > 0 and not(epoch % opt.val_intervals):
-                with torch.no_grad():
-                    log_dict_val = trainer.val(epoch, loaders["val"])
-                writer.add_scalars("val", log_dict_val, opt.val_intervals)
-
-            if "test" in loaders and opt.test_intervals > 0 and not(epoch % opt.test_intervals):
-                log_dict_test = trainer.test(loaders["test"])
-                writer.add_scalars("test", log_dict_test, opt.test_intervals)
-
-            need_save, timespamp = history.step(epoch, log_dict_train, log_dict_val, log_dict_test)
-            if need_save:
-                save_model(os.path.join(opt.save_dir, str(timespamp) + '.pth'),
-                           epoch, model, log_dict_train["loss"], optimizer)
-
-            if lr_schedule:
-                lr_schedule.step()
-                print([group_param["lr"] for group_param in optimizer.param_groups])
-        writer.close()
+    writer.close()

@@ -133,10 +133,7 @@ class BaseTrainer(object):
 
     def run_epoch(self, phase, epoch, data_loader):
         model_with_loss = self.model_with_loss
-        for key in self.loss:
-            self.loss[key].epoch = epoch
 
-        self.model_with_loss.module.model.epoch = epoch
 
         if phase == 'train':
             model_with_loss.train()

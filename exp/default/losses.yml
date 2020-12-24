@@ -1,0 +1,15 @@
+center:
+    weight: 1
+    func: FocalLoss
+    kwargs:
+        key: center 
+wh:
+    weight: 0.1
+    func: L1SparseLoss
+    kwargs:
+        key: wh
+bias:
+    weight: 1
+    func: L1SparseLoss
+    kwargs:
+        key: bias

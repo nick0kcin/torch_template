@@ -1,0 +1,57 @@
+-
+    class: StepLR
+    start: 0
+    kwargs:
+        step_size: 20
+        gamma: 0.85
+    lr:
+        - 0.001
+-
+    class: StepLR
+    start: 40
+    kwargs:
+        step_size: 40
+        gamma: 0.5
+    lr:
+        - 0.0005
+
+-
+    class: StepLR
+    start: 94
+    kwargs:
+        step_size: 15
+        gamma: 0.75
+    lr:
+        - 0.00008
+-
+    class: StepLR
+    start: 171
+    kwargs:
+        step_size: 10
+        gamma: 0.65
+    lr:
+        - 0.00001
+-
+    class: StepLR
+    start: 215
+    kwargs:
+        step_size: 50
+        gamma: 0.75
+    lr:
+        - 0.0001
+-
+    class: StepLR
+    start: 500
+    kwargs:
+        step_size: 50
+        gamma: 0.75
+    lr:
+        - 0.00002
+-
+    class: StepLR
+    start: 600
+    kwargs:
+        step_size: 20
+        gamma: 0.75
+    lr:
+        - 0.00001
